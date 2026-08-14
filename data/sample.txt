@@ -1,0 +1,5 @@
+Bu benim ilk RAG proje test dosyamdır.
+
+Bu sistem PDF, DOCX ve TXT dosyalarını okuyacaktır.
+
+Microsoft Foundry Local kullanarak yerel çalışan bir bilgi asistanı geliştireceğim.
