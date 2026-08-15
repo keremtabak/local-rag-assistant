@@ -46,9 +46,16 @@ def get_documents():
     connection.close()
 
     return rows
+def clear_documents():
+    connection = create_connection()
+
+    cursor = connection.cursor()
+
+    cursor.execute("DELETE FROM documents")
+
+    connection.commit()
+    connection.close()
 if __name__ == "__main__":
     create_table()
 
-    documents = get_documents()
-
-    print(documents)
+    print("Database ready")
