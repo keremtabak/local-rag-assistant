@@ -21,9 +21,20 @@ question_embedding = model.encode(question)
 
 print("Question Embedding Boyutu:", len(question_embedding))
 
-score = cosine_similarity(
-    [question_embedding],
-    [embeddings[0]]
-)
+best_score = -1
+best_chunk = ""
 
-print("Similarity Score:", score[0][0])
+for i, embedding in enumerate(embeddings):
+    score = cosine_similarity(
+        [question_embedding],
+        [embedding]
+    )
+
+    similarity = score[0][0]
+
+    if similarity > best_score:
+        best_score = similarity
+        best_chunk = chunks[i]
+
+print("Best Score:", best_score)
+print(best_chunk)
