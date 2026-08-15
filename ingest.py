@@ -1,5 +1,6 @@
 from docx import Document
 from pypdf import PdfReader
+from database import insert_document
 
 def read_txt_file(file_path):
     with open(file_path, "r", encoding="utf-8") as file:
@@ -29,7 +30,11 @@ def chunk_text(text, chunk_size=500):
 if __name__ == "__main__":
     text = read_file("data/sample.txt")
 
-    chunks = chunk_text(text, 50)
+    chunks = chunk_text(text, 500)
 
-    print("Chunk Sayısı:", len(chunks))
-    print(chunks)
+    insert_document(
+        "sample.txt",
+        chunks[0]
+    )
+
+    print("Chunk inserted successfully")
