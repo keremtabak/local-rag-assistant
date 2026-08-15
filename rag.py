@@ -1,6 +1,6 @@
 from sentence_transformers import SentenceTransformer
 from database import get_documents
-
+from sklearn.metrics.pairwise import cosine_similarity
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -8,11 +8,22 @@ print("Model loaded successfully")
 
 documents = get_documents()
 
-first_chunk = documents[0][2]
+chunks = [document[2] for document in documents]
 
-embedding = model.encode(first_chunk)
+embeddings = model.encode(chunks)
 
-print(len(embedding))
-print(embedding[:5])
+print("Chunk Sayısı:", len(chunks))
+print("Embedding Sayısı:", len(embeddings))
 
-print(first_chunk)
+question = "Bu proje ne geliştirecek?"
+
+question_embedding = model.encode(question)
+
+print("Question Embedding Boyutu:", len(question_embedding))
+
+score = cosine_similarity(
+    [question_embedding],
+    [embeddings[0]]
+)
+
+print("Similarity Score:", score[0][0])
