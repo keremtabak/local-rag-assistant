@@ -32,9 +32,10 @@ if __name__ == "__main__":
 
     chunks = chunk_text(text, 500)
 
-    insert_document(
+    for chunk in chunks:
+        insert_document(
         "sample.txt",
-        chunks[0]
+        chunk
     )
 
     print("Chunk inserted successfully")
