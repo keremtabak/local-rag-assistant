@@ -19,6 +19,17 @@ def read_file(file_path):
 
     if file_path.endswith(".pdf") or file_path.endswith(".pdf.pdf"):
         return read_pdf_file(file_path)
+def chunk_text(text, chunk_size=500):
+    chunks = []
+
+    for i in range(0, len(text), chunk_size):
+        chunks.append(text[i:i + chunk_size])
+
+    return chunks    
 if __name__ == "__main__":
-    content = read_file("data/test.docx")
-    print(content)
+    text = read_file("data/sample.txt")
+
+    chunks = chunk_text(text, 50)
+
+    print("Chunk Sayısı:", len(chunks))
+    print(chunks)
