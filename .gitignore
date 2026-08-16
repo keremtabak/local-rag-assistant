@@ -1,2 +1,9 @@
 __pycache__/
 db/rag.db
+test_foundry.py
+
+*.pdf
+*.docx
+
+__pycache__/
+*.pyc

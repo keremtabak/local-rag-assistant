@@ -2,6 +2,10 @@ from sentence_transformers import SentenceTransformer
 from database import get_documents
 from sklearn.metrics.pairwise import cosine_similarity
 
+from foundry_local_sdk import Configuration
+from foundry_local_sdk import FoundryLocalManager
+
+
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 print("Model loaded successfully")
@@ -14,6 +18,7 @@ embeddings = model.encode(chunks)
 
 print("Chunk Sayısı:", len(chunks))
 print("Embedding Sayısı:", len(embeddings))
+
 
 def retrieve(query, top_k=3):
     question_embedding = model.encode(query)
@@ -41,13 +46,42 @@ def retrieve(query, top_k=3):
 
     return context
 
-context = retrieve(
-    "Bu proje ne geliştirecek?"
+
+config = Configuration(
+    app_name="local-rag-assistant",
+    app_data_dir=r"D:\AI\foundry",
+    model_cache_dir=r"D:\AI\models",
+    logs_dir=r"D:\AI\logs"
 )
 
-question = "Bu proje ne geliştirecek?"
+manager = FoundryLocalManager(config)
 
-prompt = f"""
+client = None
+
+for foundry_model in manager.catalog.list_models():
+    if foundry_model.alias == "phi-4-mini":
+
+        print("Phi-4 Mini yükleniyor...")
+
+        foundry_model.load()
+
+        client = foundry_model.get_chat_client()
+
+        print("Phi-4 Mini hazır.")
+
+        break
+
+
+while True:
+
+    question = input("\nSorunuzu girin (çıkmak için q): ")
+
+    if question.lower() == "q":
+        break
+
+    context = retrieve(question)
+
+    prompt = f"""
 Aşağıdaki bağlama göre soruyu cevapla.
 
 Bağlam:
@@ -59,4 +93,14 @@ Soru:
 {question}
 """
 
-print(prompt)
+    response = client.complete_chat(
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+    print("\n=== CEVAP ===\n")
+    print(response.choices[0].message.content)
