@@ -34,15 +34,29 @@ def retrieve(query, top_k=3):
 
     results.sort(reverse=True)
 
-    return results[:top_k]
+    context = "\n\n".join(
+        chunk
+        for score, chunk in results[:top_k]
+    )
 
+    return context
 
-results = retrieve(
+context = retrieve(
     "Bu proje ne geliştirecek?"
 )
 
-context = "\n\n".join(
-    chunk for score, chunk in results
-)
+question = "Bu proje ne geliştirecek?"
 
-print(context)
+prompt = f"""
+Aşağıdaki bağlama göre soruyu cevapla.
+
+Bağlam:
+
+{context}
+
+Soru:
+
+{question}
+"""
+
+print(prompt)
