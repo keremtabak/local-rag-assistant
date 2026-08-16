@@ -15,31 +15,33 @@ embeddings = model.encode(chunks)
 print("Chunk Sayısı:", len(chunks))
 print("Embedding Sayısı:", len(embeddings))
 
-question = "Bu proje ne geliştirecek?"
+def retrieve(query, top_k=3):
+    question_embedding = model.encode(query)
 
-question_embedding = model.encode(question)
+    results = []
 
-print("Question Embedding Boyutu:", len(question_embedding))
+    for i, embedding in enumerate(embeddings):
+        score = cosine_similarity(
+            [question_embedding],
+            [embedding]
+        )
 
-results = []
+        similarity = score[0][0]
 
-for i, embedding in enumerate(embeddings):
-    score = cosine_similarity(
-        [question_embedding],
-        [embedding]
-    )
+        results.append(
+            (similarity, chunks[i])
+        )
 
-    similarity = score[0][0]
+    results.sort(reverse=True)
 
-    results.append(
-        (similarity, chunks[i])
-    )
+    return results[:top_k]
 
-results.sort(reverse=True)
 
-top_k = 3
+results = retrieve(
+    "Bu proje ne geliştirecek?"
+)
 
-for score, chunk in results[:top_k]:
+for score, chunk in results:
     print("Score:", score)
     print(chunk)
     print("-" * 50)
