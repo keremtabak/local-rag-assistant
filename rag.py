@@ -41,7 +41,8 @@ results = retrieve(
     "Bu proje ne geliştirecek?"
 )
 
-for score, chunk in results:
-    print("Score:", score)
-    print(chunk)
-    print("-" * 50)
+context = "\n\n".join(
+    chunk for score, chunk in results
+)
+
+print(context)
