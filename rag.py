@@ -37,7 +37,9 @@ for i, embedding in enumerate(embeddings):
 
 results.sort(reverse=True)
 
-for score, chunk in results:
+top_k = 3
+
+for score, chunk in results[:top_k]:
     print("Score:", score)
     print(chunk)
     print("-" * 50)
