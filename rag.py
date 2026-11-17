@@ -1,109 +1,43 @@
-from sentence_transformers import SentenceTransformer
-from database import get_documents
-from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
-from foundry_local_sdk import Configuration
-from foundry_local_sdk import FoundryLocalManager
-
-# 1. Modeli ve Verileri Yükle
-model = SentenceTransformer("all-MiniLM-L6-v2")
-print("Model loaded successfully")
-
-documents = get_documents()
-chunks = [document[2] for document in documents]
-
-embeddings = model.encode(chunks)
-
-# BM25 için metinleri kelimelerine ayırıyoruz (Tokenization)
-tokenized_chunks = [chunk.lower().split(" ") for chunk in chunks]
-bm25 = BM25Okapi(tokenized_chunks)
-
-print("Chunk Sayısı:", len(chunks))
-print("Embedding Sayısı:", len(embeddings))
-
-def hybrid_retrieve(query, top_k=3, alpha=0.5):
+def hybrid_search(question, documents, embedding_model, top_k=3):
     """
-    Hibrit Arama: Vektör Benzerliği (Cosine Similarity) ile 
-    Kelime Tabanlı Aramayı (BM25) harmanlar.
+    documents: [(id, filename, chunk, embedding), ...] listesi
     """
-    # Vektör Arama Skorları
-    question_embedding = model.encode(query)
-    vector_scores = cosine_similarity([question_embedding], embeddings)[0]
+    if not documents:
+        return []
+
+    chunks = [doc[2] for doc in documents]
+    embeddings = [doc[3] for doc in documents]
     
-    # BM25 Skorları
-    tokenized_query = query.lower().split(" ")
+    # Eğer veritabanında embedding henüz hesaplanmamışsa (güvenlik önlemi)
+    if embeddings[0] is None:
+        embeddings = embedding_model.encode(chunks)
+    else:
+        embeddings = np.array(embeddings)
+
+    # 1. BM25 (Anahtar Kelime) Araması
+    tokenized_corpus = [chunk.lower().split(" ") for chunk in chunks]
+    bm25 = BM25Okapi(tokenized_corpus)
+    tokenized_query = question.lower().split(" ")
     bm25_scores = bm25.get_scores(tokenized_query)
     
-    # Skorları Normalize Et (0 ile 1 arasına çek)
-    if max(vector_scores) > min(vector_scores):
-        norm_vector = (vector_scores - min(vector_scores)) / (max(vector_scores) - min(vector_scores))
-    else:
-        norm_vector = vector_scores
-        
-    if max(bm25_scores) > min(bm25_scores):
-        norm_bm25 = (bm25_scores - min(bm25_scores)) / (max(bm25_scores) - min(bm25_scores))
-    else:
-        norm_bm25 = bm25_scores
+    # BM25 skorlarını normalize et (0 ile 1 arasına çek)
+    max_bm25 = max(bm25_scores) if len(bm25_scores) > 0 and max(bm25_scores) > 0 else 1.0
+    normalized_bm25 = bm25_scores / max_bm25
 
-    # Hibrit Skor Hesaplama (Alpha ağırlıklı ortalama)
-    hybrid_scores = alpha * norm_vector + (1 - alpha) * norm_bm25
+    # 2. Vektör (Anlam) Benzerliği Araması
+    question_embedding = embedding_model.encode(question)
+    cosine_scores = cosine_similarity([question_embedding], embeddings)[0]
 
-    # Skorları ve chunk'ları eşleştir ve sırala
-    results = sorted(zip(hybrid_scores, chunks), key=lambda x: x[0], reverse=True)
+    # 3. Hibrit Skorlama (%50 BM25 + %50 Vektör)
+    hybrid_scores = 0.5 * normalized_bm25 + 0.5 * cosine_scores
 
-    # En iyi sonuçları birleştir
-    context = "\n\n".join(chunk for score, chunk in results[:top_k])
-    return context
+    # En yüksek skora sahip sonuçları sırala
+    scored_results = list(zip(hybrid_scores, chunks))
+    scored_results.sort(key=lambda x: x[0], reverse=True)
 
-# 2. Foundry Local SDK Yapılandırması (Yollar C:\ sürücüsüne uyarlandı)
-config = Configuration(
-    app_name="local-rag-assistant",
-    app_data_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\foundry",
-    model_cache_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\models",
-    logs_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\logs"
-)
-
-manager = FoundryLocalManager(config)
-client = None
-
-for foundry_model in manager.catalog.list_models():
-    if foundry_model.alias == "phi-4-mini":
-        print("Phi-4 Mini yükleniyor...")
-        foundry_model.load()
-        client = foundry_model.get_chat_client()
-        print("Phi-4 Mini hazır.")
-        break
-
-# 3. Sohbet Döngüsü
-while True:
-    question = input("\nSorunuzu girin (çıkmak için q): ")
-    if question.lower() == "q":
-        break
-
-    # Hibrit arama ile bağlamı çek
-    context = hybrid_retrieve(question)
-
-    prompt = f"""
-Aşağıdaki bağlama göre soruyu cevapla.
-
-Bağlam:
-
-{context}
-
-Soru:
-
-{question}
-"""
-
-    response = client.complete_chat(
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
-
-    print("\n=== CEVAP ===\n")
-    print(response.choices[0].message.content)
+    # En iyi top_k sonucu döndür
+    return [chunk for score, chunk in scored_results[:top_k]]

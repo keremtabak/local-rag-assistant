@@ -1,61 +1,55 @@
 import sqlite3
+import numpy as np
 
+DB_PATH = "db/rag.db"
 
-def create_connection():
-    connection = sqlite3.connect("db/rag.db")
-    return connection
-
-
-def create_table():
-    connection = create_connection()
-
-    cursor = connection.cursor()
-
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_name TEXT,
-            chunk_text TEXT
+            filename TEXT,
+            chunk TEXT,
+            embedding BLOB
         )
     """)
+    conn.commit()
+    conn.close()
 
-    connection.commit()
-    connection.close()
+def insert_document(filename, chunk, embedding):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    # Numpy dizisini binary (BLOB) formata çevirerek kaydediyoruz
+    embedding_blob = embedding.tobytes()
+    cursor.execute("""
+        INSERT INTO documents (filename, chunk, embedding)
+        VALUES (?, ?, ?)
+    """, (filename, chunk, embedding_blob))
+    conn.commit()
+    conn.close()
 
-def insert_document(file_name, chunk_text):
-    connection = create_connection()
-
-    cursor = connection.cursor()
-
-    cursor.execute(
-        "INSERT INTO documents (file_name, chunk_text) VALUES (?, ?)",
-        (file_name, chunk_text)
-    )
-
-    connection.commit()
-    connection.close()
 def get_documents():
-    connection = create_connection()
-
-    cursor = connection.cursor()
-
-    cursor.execute("SELECT * FROM documents")
-
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, filename, chunk, embedding FROM documents")
     rows = cursor.fetchall()
+    conn.close()
+    
+    # Blob verilerini tekrar numpy array'e dönüştürüyoruz
+    documents = []
+    for row in rows:
+        doc_id, filename, chunk, emb_blob = row
+        embedding = np.frombuffer(emb_blob, dtype=np.float32) if emb_blob else None
+        documents.append((doc_id, filename, chunk, embedding))
+    return documents
 
-    connection.close()
-
-    return rows
 def clear_documents():
-    connection = create_connection()
-
-    cursor = connection.cursor()
-
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     cursor.execute("DELETE FROM documents")
-
-    connection.commit()
-    connection.close()
-if __name__ == "__main__":
-    create_table()
-
-    print("Database ready")
+    conn.commit()
+    conn.close()
