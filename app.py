@@ -22,18 +22,17 @@ def load_chat_client():
 
     config = Configuration(
         app_name="local-rag-assistant",
-        app_data_dir=r"D:\AI\foundry",
-        model_cache_dir=r"D:\AI\models",
-        logs_dir=r"D:\AI\logs"
+        app_data_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\foundry",
+        model_cache_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\models",
+        logs_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\logs"
     )
 
     manager = FoundryLocalManager(config)
 
     for model in manager.catalog.list_models():
         if model.alias == "phi-4-mini":
-
-            model.load()
-
+            model.download()  # <--- Buraya ekle
+            model.load()      # <--- Altına bu gelecek
             return model.get_chat_client()
 
     return None
@@ -106,21 +105,18 @@ if question:
         for score, chunk in results[:3]
     )
 
-   prompt = f"""
+    prompt = f"""
 Sen bir belge asistanısın.
 
 Kurallar:
-
 - Yalnızca verilen bağlamı kullan.
 - Bağlamda cevap yoksa "Bu bilgi belgede bulunamadı." de.
 - Kendi bilginle cevap üretme.
 
 Bağlam:
-
 {context}
 
 Soru:
-
 {question}
 """
 

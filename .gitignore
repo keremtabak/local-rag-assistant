@@ -1,9 +1,38 @@
-__pycache__/
-db/rag.db
-test_foundry.py
+# Python Sanal Ortamları ve Paketler
+venv/
+env/
+ENV/
+.venv/
 
-*.pdf
-*.docx
-
+# Derleme ve Önbellek Dosyaları
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Veritabanı ve Yerel Yapay Zeka / Model Dosyaları (Kritik)
+db/
+ai_data/
+
+# İşletim Sistemi Geçici Dosyaları (Windows / macOS)
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# IDE ve Editör Ayarları (VS Code / PyCharm)
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test, Örnek Belgeler ve Hassas Veriler
+test_foundry.py
+*.pdf
+*.docx
+*.env
+*.log
+logs/
