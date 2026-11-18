@@ -1,147 +1,132 @@
+import os
 import streamlit as st
-from sentence_transformers import SentenceTransformer
-
-from database import get_documents, clear_documents, insert_document
+import ollama
 from ingest import read_file, chunk_text
+from database import init_db, get_connection, insert_document
 from rag import hybrid_search
 
-from foundry_local_sdk import Configuration
-from foundry_local_sdk import FoundryLocalManager
+# Sayfa Konfigürasyonu
+st.set_page_config(page_title="Local RAG Assistant", page_icon="🤖", layout="wide")
 
-
-@st.cache_resource
-def load_embedding_model():
-    return SentenceTransformer("all-MiniLM-L6-v2")
-
-
-@st.cache_resource
-def load_chat_client():
-    config = Configuration(
-        app_name="local-rag-assistant",
-        app_data_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\foundry",
-        model_cache_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\models",
-        logs_dir=r"C:\Users\kerem\local-rag-assistant\ai_data\logs"
-    )
-
-    manager = FoundryLocalManager(config)
-
-    for model in manager.catalog.list_models():
-        if model.alias == "phi-4-mini":
-            model.download()
-            model.load()
-            return model.get_chat_client()
-
-    return None
-
-
-embedding_model = load_embedding_model()
-client = load_chat_client()
-
-st.set_page_config(
-    page_title="Local RAG Assistant",
-    page_icon="🤖",
-    layout="wide"
-)
+# Veritabanını Başlat
+init_db()
 
 st.title("🤖 Local RAG Assistant")
-st.write("Belgelerinizi yükleyin ve hibrit arama gücüyle yerel yapay zeka modelinizle sohbet edin.")
+st.markdown("Belgelerinizi yükleyin ve hibrit arama gücüyle yerel **Qwen** modelinizle sohbet edin.")
 
-# Sidebar: Belge Yönetimi
-with st.sidebar:
-    st.header("📁 Belge Yönetimi")
-    uploaded_file = st.file_uploader(
-        "Desteklenen formatlar: txt, pdf, docx",
-        type=["txt", "pdf", "docx"]
-    )
+# --- SOL MENÜ: Belge Yönetimi ---
+st.sidebar.header("📁 Belge Yönetimi")
+st.sidebar.text("Desteklenen formatlar: txt, pdf, docx")
 
-    if uploaded_file:
-        file_path = uploaded_file.name
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+uploaded_file = st.sidebar.file_uploader("Bir belge yükleyin", type=["txt", "pdf", "docx"])
 
-        clear_documents()
-        text = read_file(file_path)
-        chunks = chunk_text(text)
+if uploaded_file is not None:
+    # Geçici klasöre kaydetme
+    os.makedirs("data", exist_ok=True)
+    file_path = os.path.join("data", uploaded_file.name)
+    
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    # Veritabanında daha önce işlenmiş mi kontrol et
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM documents WHERE filename = ?", (uploaded_file.name,))
+    exists = cursor.fetchone()[0]
+    conn.close()
+    
+    if exists == 0:
+        with st.spinner("Belge okunuyor, parçalanıyor ve önbellekleniyor..."):
+            try:
+                # 1. Dosyayı oku
+                text = read_file(file_path)
+                # 2. Saf Python ile parçala (chunking)
+                chunks = chunk_text(text)
+                
+                # 3. Parçaları ve embedding'leri veritabanına kaydet
+                for chunk in chunks:
+                    insert_document(uploaded_file.name, chunk)
+                
+                st.sidebar.success(f"{uploaded_file.name} başarıyla işlendi ve önbelleklendi!")
+            except Exception as e:
+                st.sidebar.error(f"Hata oluştu: {e}")
+    else:
+        st.sidebar.info(f"{uploaded_file.name} zaten veritabanında mevcut.")
 
-        with st.spinner("Parçalar vektörleştiriliyor ve veritabanına kaydediliyor..."):
-            for chunk in chunks:
-                # Embedding'i yükleme anında 1 kez hesaplayıp kaydediyoruz!
-                embedding = embedding_model.encode(chunk)
-                insert_document(file_path, chunk, embedding)
+# Sohbet Geçmişini Temizleme Butonu
+if st.sidebar.button("Sohbet Geçmişini Temizle"):
+    st.session_state.messages = []
+    st.rerun()
 
-        st.success(f"{uploaded_file.name} başarıyla işlendi ve önbelleklendi!")
-
-    st.markdown("---")
-    if st.button("Sohbet Geçmişini Temizle"):
-        st.session_state.messages = []
-        st.rerun()
-
-# Sohbet Geçmişi Başlatma
+# --- SOHBET ARAYÜZÜ ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Geçmiş mesajları ekranda göster
+# Eski mesajları ekranda göster
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if "sources" in message and message["sources"]:
-            with st.expander("📄 Kaynak Parçalar (Citations)"):
-                for idx, src in enumerate(message["sources"], 1):
-                    st.markdown(f"**Kaynak {idx}:**\n> {src}")
+            with st.expander("📌 Kaynak Parçalar (Citations)"):
+                for i, src in enumerate(message["sources"]):
+                    st.markdown(f"**Kaynak {i+1}:**\n{src}")
 
-# Kullanıcıdan Girdi Al
-if question := st.chat_input("Belgeleriniz hakkında bir soru sorun..."):
-    st.session_state.messages.append({"role": "user", "content": question})
+# Kullanıcıdan girdi al
+query = st.chat_input("Belgeleriniz hakkında bir soru sorun...")
+
+if query:
+    # Kullanıcı mesajını ekle
+    st.session_state.messages.append({"role": "user", "content": query})
     with st.chat_message("user"):
-        st.markdown(question)
+        st.markdown(query)
 
     with st.chat_message("assistant"):
-        with st.spinner("Hibrit arama yapılıyor ve yanıt üretiliyor..."):
-            documents = get_documents()
-            
-            if not documents:
-                response_text = "Lütfen önce sol menüden bir belge yükleyin."
-                sources = []
-            else:
-                # Hibrit arama ile en iyi 3 parçayı anında bul
-                top_chunks = hybrid_search(question, documents, embedding_model, top_k=3)
-                context = "\n\n".join(top_chunks)
-                sources = top_chunks
-
-                prompt = f"""
-Sen profesyonel bir kurumsal belge asistanısın.
-
-Kurallar:
-- Yalnızca verilen bağlamı (context) kullan.
-- Bağlamda cevap yoksa "Bu bilgi belgede bulunamadı." de.
-- Kendi harici bilginle cevap üretme.
+        with st.spinner("Qwen belgede arama yapıyor ve yanıt hazırlıyor..."):
+            try:
+                # 1. Hibrit Arama ile en alakalı kaynak parçalarını bul
+                relevant_chunks = hybrid_search(query, top_k=3)
+                
+                if not relevant_chunks:
+                    response_text = "Bu bilgi belgede bulunamadı."
+                    relevant_chunks = []
+                else:
+                    # 2. Bağlamı oluştur
+                    context = "\n\n".join([f"Kaynak {i+1}:\n{chunk}" for i, chunk in enumerate(relevant_chunks)])
+                    
+                    prompt = f"""Aşağıdaki bağlamı kullanarak kullanıcı sorusunu profesyonel ve detaylı bir şekilde yanıtla. Eğer bilgi bağlamda kesinlikle yoksa "Bu bilgi belgede bulunamadı." de, asla uydurma.
 
 Bağlam:
 {context}
 
-Soru:
-{question}
-"""
+Kullanıcı Sorusu: {query}
+Yanıt:"""
 
-                response = client.complete_chat(
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ]
-                )
-                response_text = response.choices[0].message.content
+                    # 3. Ollama üzerinden Qwen modeline bağlan
+                    response = ollama.chat(
+                        model='qwen2.5:7b',
+                        messages=[
+                            {'role': 'system', 'content': 'Sen uzman bir teknik analist ve yapay zeka asistanısın. PDF içeriklerini ve akademik makaleleri derinlemesine analiz edersin.'},
+                            {'role': 'user', 'content': prompt}
+                        ]
+                    )
+                    response_text = response['message']['content']
 
-            st.markdown(response_text)
-            
-            if sources:
-                with st.expander("📄 Kaynak Parçalar (Citations)"):
-                    for idx, src in enumerate(sources, 1):
-                        st.markdown(f"**Kaynak {idx}:**\n> {src}")
+                # Yanıtı ekrana bas
+                st.markdown(response_text)
+                
+                if relevant_chunks:
+                    with st.expander("📌 Kaynak Parçalar (Citations)"):
+                        for i, src in enumerate(relevant_chunks):
+                            st.markdown(f"**Kaynak {i+1}:**\n{src}")
 
-    st.session_state.messages.append({
-        "role": "assistant", 
-        "content": response_text,
-        "sources": sources if 'sources' in locals() else []
-    })
+                # Asistan mesajını geçmişe kaydet
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": response_text,
+                    "sources": relevant_chunks if relevant_chunks else []
+                })
+
+            except Exception as e:
+                error_msg = f"Bir hata oluştu: {e}. Lütfen Ollama uygulamasının açık olduğundan emin ol."
+                st.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
